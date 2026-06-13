@@ -2,7 +2,7 @@
   "teams": [
     {
       "roleId": "1515065943913398542",
-      "ownerId": "1405087330519351390",
+      "ownerId": null,
       "imageUrl": null,
       "memberIds": []
     },
