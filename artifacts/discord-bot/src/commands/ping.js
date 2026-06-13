@@ -1,9 +1,4 @@
-/**
- * /ping command
- * Replies with Pong 🏓 and the round-trip latency in milliseconds.
- */
-
-import { SlashCommandBuilder } from "discord.js";
+import { SlashCommandBuilder, EmbedBuilder } from "discord.js";
 
 export const data = new SlashCommandBuilder()
   .setName("ping")
@@ -11,8 +6,24 @@ export const data = new SlashCommandBuilder()
 
 /** @param {import("discord.js").ChatInputCommandInteraction} interaction */
 export async function execute(interaction) {
-  const sent = await interaction.reply({ content: "Pong 🏓", fetchReply: true });
+  const sent = await interaction.reply({
+    embeds: [
+      new EmbedBuilder()
+        .setColor(0x5865f2)
+        .setTitle("Pong! 🏓")
+        .setDescription("Calculating latency…"),
+    ],
+    fetchReply: true,
+  });
+
   const ms = sent.createdTimestamp - interaction.createdTimestamp;
 
-  await interaction.editReply(`Pong 🏓\n\nms: ${ms}`);
+  await interaction.editReply({
+    embeds: [
+      new EmbedBuilder()
+        .setColor(ms < 200 ? 0x57f287 : ms < 500 ? 0xfee75c : 0xed4245)
+        .setTitle("Pong! 🏓")
+        .addFields({ name: "Latency", value: `${ms}ms`, inline: true }),
+    ],
+  });
 }

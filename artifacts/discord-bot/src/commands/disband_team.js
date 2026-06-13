@@ -1,15 +1,8 @@
-/**
- * /disband_team command  (admin only)
- *
- * Strips the team role from every player, removes the WFA | Manager role
- * and team role from the owner, clears the owner record, and empties the
- * member list — but keeps the team in the registered list.
- */
-
 import {
   SlashCommandBuilder,
   PermissionFlagsBits,
   MessageFlags,
+  EmbedBuilder,
 } from "discord.js";
 import { getTeam, disbandTeamMembers } from "../storage/teamRoles.js";
 import { MANAGER_ROLE_ID } from "../config.js";
@@ -26,7 +19,12 @@ export const data = new SlashCommandBuilder()
 export async function execute(interaction) {
   if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
     return interaction.reply({
-      content: "You need the **Administrator** permission to use this command.",
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0xed4245)
+          .setTitle("Permission Denied")
+          .setDescription("You need the **Administrator** permission to use this command."),
+      ],
       flags: MessageFlags.Ephemeral,
     });
   }
@@ -35,7 +33,12 @@ export async function execute(interaction) {
 
   if (!getTeam(teamRole.id)) {
     return interaction.reply({
-      content: `**${teamRole.name}** is not a registered team.`,
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0xfee75c)
+          .setTitle("Not Found")
+          .setDescription(`**${teamRole.name}** is not a registered team.`),
+      ],
       flags: MessageFlags.Ephemeral,
     });
   }
@@ -43,20 +46,14 @@ export async function execute(interaction) {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   const guild = interaction.guild;
-
-  // Fetch the WFA | Manager role so we can strip it from the owner
   const managerRole = await guild.roles.fetch(MANAGER_ROLE_ID).catch(() => null);
-
-  // Clear storage and get who was on the team
   const { memberIds, ownerId } = disbandTeamMembers(teamRole.id);
 
   let removedCount = 0;
   let failCount = 0;
 
-  // ── Remove team role from all signed players ───────────────────────────────
   await Promise.all(
     memberIds.map(async (userId) => {
-      // Skip the owner here — handled separately below
       if (userId === ownerId) return;
       try {
         const member = await guild.members.fetch(userId).catch(() => null);
@@ -70,7 +67,6 @@ export async function execute(interaction) {
     })
   );
 
-  // ── Remove team role AND manager role from the owner ──────────────────────
   if (ownerId) {
     try {
       const owner = await guild.members.fetch(ownerId).catch(() => null);
@@ -88,11 +84,26 @@ export async function execute(interaction) {
   const hadAnyone = ownerId || memberIds.length > 0;
 
   return interaction.editReply({
-    content:
-      `**${teamRole.name}** has been disbanded.\n` +
-      (hadAnyone
-        ? `Cleared **${removedCount}** person(s) from the team${failCount > 0 ? ` (${failCount} failed)` : ""}.`
-        : "The team had no members or owner assigned.") +
-      `\nThe team is still in the list and can be restaffed.`,
+    embeds: [
+      new EmbedBuilder()
+        .setColor(0xed4245)
+        .setTitle("Team Disbanded")
+        .setDescription(`**${teamRole.name}** has been disbanded.`)
+        .addFields(
+          {
+            name: "Members Cleared",
+            value: hadAnyone
+              ? `**${removedCount}** person(s) removed${failCount > 0 ? ` (${failCount} failed)` : ""}`
+              : "The team had no members or owner assigned.",
+            inline: false,
+          },
+          {
+            name: "Note",
+            value: "The team is still in the list and can be restaffed with `/appoint`.",
+            inline: false,
+          }
+        )
+        .setTimestamp(),
+    ],
   });
 }

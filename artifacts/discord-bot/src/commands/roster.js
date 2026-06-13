@@ -1,22 +1,5 @@
-/**
- * /roster command  (everyone)
- * Displays all teams with their owner and current player roster.
- *
- * Format:
- *   WFA | Arsenal
- *   Owner — @mention
- *
- *   Players:
- *   @mention
- *   ...
- *
- *   ────────────────────────
- */
-
-import { SlashCommandBuilder, MessageFlags } from "discord.js";
+import { SlashCommandBuilder, EmbedBuilder, MessageFlags } from "discord.js";
 import { getTeams } from "../storage/teamRoles.js";
-
-const DIVIDER = "─".repeat(40);
 
 export const data = new SlashCommandBuilder()
   .setName("roster")
@@ -28,55 +11,81 @@ export async function execute(interaction) {
 
   if (teams.length === 0) {
     return interaction.reply({
-      content: "No teams have been set up yet.",
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0xfee75c)
+          .setTitle("No Teams")
+          .setDescription("No teams have been set up yet."),
+      ],
       flags: MessageFlags.Ephemeral,
     });
   }
 
   await interaction.deferReply();
 
-  const guild   = interaction.guild;
-  const chunks  = []; // We may need multiple messages if roster is long
+  const guild = interaction.guild;
+
+  // Build one embed per team (Discord allows up to 10 per message)
+  const embeds = [];
 
   for (const team of teams) {
     const role  = await guild.roles.fetch(team.roleId).catch(() => null);
     const name  = role ? role.name : `Unknown Team (${team.roleId})`;
-    const owner = team.ownerId ? `<@${team.ownerId}>` : "No owner set";
+    const color = role?.color || 0x5865f2;
+    const owner = team.ownerId ? `<@${team.ownerId}>` : "_No owner set_";
 
-    // Players = members excluding the owner
     const playerIds = team.memberIds.filter((id) => id !== team.ownerId);
-    const playerLines =
-      playerIds.length > 0
+    const players   = playerIds.length > 0
+      ? playerIds.map((id) => `<@${id}>`).join("\n")
+      : "_No players yet_";
+
+    const embed = new EmbedBuilder()
+      .setColor(color)
+      .setTitle(name)
+      .addFields(
+        { name: "Owner", value: owner, inline: false },
+        { name: "Players", value: players, inline: false }
+      );
+
+    if (team.imageUrl) embed.setThumbnail(team.imageUrl);
+
+    embeds.push(embed);
+
+    // Discord caps at 10 embeds per message — flush early if needed
+    if (embeds.length === 10) break;
+  }
+
+  await interaction.editReply({ embeds });
+
+  // If there are more than 10 teams, send the rest as follow-ups
+  if (teams.length > 10) {
+    const remaining = teams.slice(10);
+    const extra = [];
+    for (const team of remaining) {
+      const role  = await guild.roles.fetch(team.roleId).catch(() => null);
+      const name  = role ? role.name : `Unknown Team (${team.roleId})`;
+      const color = role?.color || 0x5865f2;
+      const owner = team.ownerId ? `<@${team.ownerId}>` : "_No owner set_";
+      const playerIds = team.memberIds.filter((id) => id !== team.ownerId);
+      const players   = playerIds.length > 0
         ? playerIds.map((id) => `<@${id}>`).join("\n")
         : "_No players yet_";
 
-    const block =
-      `**${name}**\n` +
-      `Owner — ${owner}\n\n` +
-      `Players:\n` +
-      `${playerLines}\n\n` +
-      `${DIVIDER}`;
+      const embed = new EmbedBuilder()
+        .setColor(color)
+        .setTitle(name)
+        .addFields(
+          { name: "Owner", value: owner, inline: false },
+          { name: "Players", value: players, inline: false }
+        );
 
-    chunks.push(block);
-  }
+      if (team.imageUrl) embed.setThumbnail(team.imageUrl);
+      extra.push(embed);
 
-  // Discord messages have a 2000-char limit — split if necessary
-  const messages = [];
-  let current    = "";
-
-  for (const chunk of chunks) {
-    if (current.length + chunk.length + 2 > 1990) {
-      messages.push(current.trimEnd());
-      current = chunk + "\n\n";
-    } else {
-      current += chunk + "\n\n";
+      if (extra.length === 10) {
+        await interaction.followUp({ embeds: extra.splice(0) });
+      }
     }
-  }
-  if (current.trim()) messages.push(current.trimEnd());
-
-  // Send the first as editReply, the rest as followUps
-  await interaction.editReply({ content: messages[0] });
-  for (let i = 1; i < messages.length; i++) {
-    await interaction.followUp({ content: messages[i] });
+    if (extra.length > 0) await interaction.followUp({ embeds: extra });
   }
 }

@@ -1,10 +1,3 @@
-/**
- * /sign command  (team owners only)
- * Sends a DM to a player offering them a spot on the owner's team.
- * The player gets Accept / Reject buttons. Only works if the player
- * is not already on another team.
- */
-
 import {
   SlashCommandBuilder,
   ActionRowBuilder,
@@ -33,11 +26,15 @@ export async function execute(interaction) {
   const guild      = interaction.guild;
   const signerUser = interaction.user;
 
-  // ── 1. Check the command runner owns a team ───────────────────────────────
   const team = getTeamByOwner(signerUser.id);
   if (!team) {
     return interaction.reply({
-      content: "You do not own a team. Only team owners can use `/sign`.",
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0xed4245)
+          .setTitle("Not a Team Owner")
+          .setDescription("You do not own a team. Only team owners can use `/sign`."),
+      ],
       flags: MessageFlags.Ephemeral,
     });
   }
@@ -45,32 +42,46 @@ export async function execute(interaction) {
   const teamRole = await guild.roles.fetch(team.roleId).catch(() => null);
   if (!teamRole) {
     return interaction.reply({
-      content: "Your team's role no longer exists. Please contact an administrator.",
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0xed4245)
+          .setTitle("Role Missing")
+          .setDescription("Your team's role no longer exists. Please contact an administrator."),
+      ],
       flags: MessageFlags.Ephemeral,
     });
   }
 
   const targetUser = interaction.options.getUser("player", true);
 
-  // Can't sign yourself
   if (targetUser.id === signerUser.id) {
     return interaction.reply({
-      content: "You cannot sign yourself.",
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0xfee75c)
+          .setTitle("Invalid Target")
+          .setDescription("You cannot sign yourself."),
+      ],
       flags: MessageFlags.Ephemeral,
     });
   }
 
-  // ── 2. Check the target isn't already on a team ───────────────────────────
   const existingTeam = getUserTeam(targetUser.id);
   if (existingTeam) {
     const existingRole = guild.roles.cache.get(existingTeam.roleId);
     return interaction.reply({
-      content: `**${targetUser.username}** is already on a team${existingRole ? ` (**${existingRole.name}**)` : ""}. They must \`/release\` first.`,
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0xfee75c)
+          .setTitle("Already on a Team")
+          .setDescription(
+            `**${targetUser.username}** is already on a team${existingRole ? ` (**${existingRole.name}**)` : ""}. They must \`/release\` first.`
+          ),
+      ],
       flags: MessageFlags.Ephemeral,
     });
   }
 
-  // ── 3. Defer + send the DM ────────────────────────────────────────────────
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   const acceptBtn = new ButtonBuilder()
@@ -90,7 +101,7 @@ export async function execute(interaction) {
     .setTitle("🏆 Team Offer")
     .setDescription(
       `**${teamRole.name}** has offered to sign you!\n\n` +
-      `Offered by: <@${signerUser.id}>\n\n` +
+      `**Offered by:** <@${signerUser.id}>\n\n` +
       `Do you accept?`
     )
     .setFooter({ text: "This offer expires in 10 minutes." });
@@ -103,81 +114,126 @@ export async function execute(interaction) {
     dmMessage = await dmChannel.send({ embeds: [offerEmbed], components: [row] });
   } catch {
     return interaction.editReply({
-      content: `Could not send a DM to **${targetUser.username}**. They may have DMs disabled.`,
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0xed4245)
+          .setTitle("DM Failed")
+          .setDescription(`Could not send a DM to **${targetUser.username}**. They may have DMs disabled.`),
+      ],
     });
   }
 
   await interaction.editReply({
-    content: `Offer sent to **${targetUser.username}**. Waiting for their response (10 min timeout)…`,
+    embeds: [
+      new EmbedBuilder()
+        .setColor(0x5865f2)
+        .setTitle("Offer Sent")
+        .setDescription(`Offer sent to **${targetUser.username}**. Waiting for their response (10 min timeout)…`),
+    ],
   });
 
-  // ── 4. Wait for the player's response ─────────────────────────────────────
   try {
     const btnInteraction = await dmMessage.awaitMessageComponent({
       componentType: ComponentType.Button,
       filter: (i) => i.user.id === targetUser.id,
-      time: 600_000, // 10 minutes
+      time: 600_000,
     });
 
     if (btnInteraction.customId === "sign_accept") {
-      // Assign the team role to the player
       const member = await guild.members.fetch(targetUser.id).catch(() => null);
 
       if (!member) {
         await btnInteraction.update({
-          embeds: [],
-          content: "Could not find you in the server. The offer has been cancelled.",
+          embeds: [
+            new EmbedBuilder()
+              .setColor(0xed4245)
+              .setTitle("Error")
+              .setDescription("Could not find you in the server. The offer has been cancelled."),
+          ],
           components: [],
         });
         return interaction.editReply({
-          content: `**${targetUser.username}** accepted but could not be found in the server.`,
+          embeds: [
+            new EmbedBuilder()
+              .setColor(0xed4245)
+              .setTitle("Member Not Found")
+              .setDescription(`**${targetUser.username}** accepted but could not be found in the server.`),
+          ],
         });
       }
 
       await member.roles.add(teamRole, `Signed by team owner ${signerUser.tag}`);
       addMemberToTeam(team.roleId, targetUser.id);
 
-      // Confirm in DM
       await btnInteraction.update({
-        embeds: [],
-        content: `You have accepted the offer and joined **${teamRole.name}**! Welcome to the team.`,
+        embeds: [
+          new EmbedBuilder()
+            .setColor(0x57f287)
+            .setTitle("Offer Accepted")
+            .setDescription(`You have joined **${teamRole.name}**! Welcome to the team.`),
+        ],
         components: [],
       });
 
-      // Public announcement in the designated signing log channel
       const signChannel = await interaction.client.channels.fetch(SIGN_LOG_CHANNEL_ID).catch(() => null);
       await signChannel?.send({
-        content: `📝 **${member.displayName}** has been signed to **${teamRole.name}**!`,
+        embeds: [
+          new EmbedBuilder()
+            .setColor(0x57f287)
+            .setTitle("Player Signed")
+            .setDescription(`<@${member.id}> has been signed to **${teamRole.name}**.`)
+            .setTimestamp(),
+        ],
       });
 
-      // Update the original reply
       return interaction.editReply({
-        content: `✅ **${targetUser.username}** accepted and has been added to **${teamRole.name}**.`,
+        embeds: [
+          new EmbedBuilder()
+            .setColor(0x57f287)
+            .setTitle("Signed!")
+            .setDescription(`**${targetUser.username}** accepted and has been added to **${teamRole.name}**.`),
+        ],
       });
     } else {
-      // Player rejected
       await btnInteraction.update({
-        embeds: [],
-        content: `You have rejected the offer from **${teamRole.name}**.`,
+        embeds: [
+          new EmbedBuilder()
+            .setColor(0xed4245)
+            .setTitle("Offer Rejected")
+            .setDescription(`You have rejected the offer from **${teamRole.name}**.`),
+        ],
         components: [],
       });
 
       return interaction.editReply({
-        content: `**${targetUser.username}** rejected your offer.`,
+        embeds: [
+          new EmbedBuilder()
+            .setColor(0xfee75c)
+            .setTitle("Offer Rejected")
+            .setDescription(`**${targetUser.username}** rejected your offer.`),
+        ],
       });
     }
-  } catch (err) {
-    // Timeout — disable the buttons in the DM
+  } catch {
     await dmMessage
       .edit({
-        embeds: [],
-        content: `The offer from **${teamRole.name}** has expired.`,
+        embeds: [
+          new EmbedBuilder()
+            .setColor(0x808080)
+            .setTitle("Offer Expired")
+            .setDescription(`The offer from **${teamRole.name}** has expired.`),
+        ],
         components: [],
       })
       .catch(() => null);
 
     return interaction.editReply({
-      content: `**${targetUser.username}** did not respond in time. The offer has expired.`,
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0xfee75c)
+          .setTitle("No Response")
+          .setDescription(`**${targetUser.username}** did not respond in time. The offer has expired.`),
+      ],
     });
   }
 }

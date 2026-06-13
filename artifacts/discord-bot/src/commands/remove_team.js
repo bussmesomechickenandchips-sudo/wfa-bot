@@ -1,12 +1,8 @@
-/**
- * /remove_team command  (admin only)
- * Permanently removes a team from the list (does NOT strip the role from members).
- */
-
 import {
   SlashCommandBuilder,
   PermissionFlagsBits,
   MessageFlags,
+  EmbedBuilder,
 } from "discord.js";
 import { removeTeam } from "../storage/teamRoles.js";
 
@@ -22,7 +18,12 @@ export const data = new SlashCommandBuilder()
 export async function execute(interaction) {
   if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
     return interaction.reply({
-      content: "You need the **Administrator** permission to use this command.",
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0xed4245)
+          .setTitle("Permission Denied")
+          .setDescription("You need the **Administrator** permission to use this command."),
+      ],
       flags: MessageFlags.Ephemeral,
     });
   }
@@ -32,13 +33,23 @@ export async function execute(interaction) {
 
   if (!removed) {
     return interaction.reply({
-      content: `The role ${role} is **not** in the team list.`,
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0xfee75c)
+          .setTitle("Not Found")
+          .setDescription(`${role} is **not** in the team list.`),
+      ],
       flags: MessageFlags.Ephemeral,
     });
   }
 
   return interaction.reply({
-    content: `Successfully removed **${role.name}** from the team list.`,
+    embeds: [
+      new EmbedBuilder()
+        .setColor(0x57f287)
+        .setTitle("Team Removed")
+        .setDescription(`**${role.name}** has been removed from the team list.`),
+    ],
     flags: MessageFlags.Ephemeral,
   });
 }

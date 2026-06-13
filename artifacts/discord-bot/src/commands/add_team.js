@@ -1,12 +1,8 @@
-/**
- * /add_team command  (admin only)
- * Adds a Discord role to the team list.
- */
-
 import {
   SlashCommandBuilder,
   PermissionFlagsBits,
   MessageFlags,
+  EmbedBuilder,
 } from "discord.js";
 import { addTeam, getTeam } from "../storage/teamRoles.js";
 
@@ -22,7 +18,12 @@ export const data = new SlashCommandBuilder()
 export async function execute(interaction) {
   if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
     return interaction.reply({
-      content: "You need the **Administrator** permission to use this command.",
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0xed4245)
+          .setTitle("Permission Denied")
+          .setDescription("You need the **Administrator** permission to use this command."),
+      ],
       flags: MessageFlags.Ephemeral,
     });
   }
@@ -31,7 +32,12 @@ export async function execute(interaction) {
 
   if (getTeam(role.id)) {
     return interaction.reply({
-      content: `The role ${role} is **already** in the team list.`,
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0xfee75c)
+          .setTitle("Already Registered")
+          .setDescription(`${role} is **already** in the team list.`),
+      ],
       flags: MessageFlags.Ephemeral,
     });
   }
@@ -39,7 +45,12 @@ export async function execute(interaction) {
   addTeam(role.id);
 
   return interaction.reply({
-    content: `Successfully added **${role.name}** to the team list.`,
+    embeds: [
+      new EmbedBuilder()
+        .setColor(0x57f287)
+        .setTitle("Team Added")
+        .setDescription(`**${role.name}** has been added to the team list.`),
+    ],
     flags: MessageFlags.Ephemeral,
   });
 }
