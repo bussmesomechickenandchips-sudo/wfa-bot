@@ -8,6 +8,7 @@ import {
   MessageFlags,
 } from "discord.js";
 import { getUserTeam, removeMemberFromTeam } from "../storage/teamRoles.js";
+import { RELEASE_LOG_CHANNEL_ID } from "../config.js";
 
 export const data = new SlashCommandBuilder()
   .setName("release")
@@ -48,8 +49,9 @@ export async function execute(interaction) {
     flags: MessageFlags.Ephemeral,
   });
 
-  // Public notice in the channel
-  await interaction.channel?.send({
+  // Public notice in the designated release log channel
+  const releaseChannel = await interaction.client.channels.fetch(RELEASE_LOG_CHANNEL_ID).catch(() => null);
+  await releaseChannel?.send({
     content: `**${interaction.user.username}** has left **${roleName}**.`,
   });
 }

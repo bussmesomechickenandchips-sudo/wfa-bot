@@ -19,6 +19,7 @@ import {
   getUserTeam,
   addMemberToTeam,
 } from "../storage/teamRoles.js";
+import { SIGN_LOG_CHANNEL_ID } from "../config.js";
 
 export const data = new SlashCommandBuilder()
   .setName("sign")
@@ -143,8 +144,9 @@ export async function execute(interaction) {
         components: [],
       });
 
-      // Public announcement in the channel where /sign was run
-      await interaction.channel?.send({
+      // Public announcement in the designated signing log channel
+      const signChannel = await interaction.client.channels.fetch(SIGN_LOG_CHANNEL_ID).catch(() => null);
+      await signChannel?.send({
         content: `📝 **${member.displayName}** has been signed to **${teamRole.name}**!`,
       });
 
