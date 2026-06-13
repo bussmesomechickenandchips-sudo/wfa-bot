@@ -107,8 +107,11 @@ export async function execute(interaction) {
       });
     }
 
-    // Give the WFA | Manager badge role (not the team's own role)
-    await member.roles.add(managerRole, `Appointed as manager of ${selectedRole.name} by ${interaction.user.tag}`);
+    // Give both the WFA | Manager badge and the team's own role
+    await member.roles.add(
+      [managerRole, selectedRole],
+      `Appointed as manager of ${selectedRole.name} by ${interaction.user.tag}`
+    );
 
     // Record as team owner in storage
     setTeamOwner(selectedRole.id, targetUser.id);
