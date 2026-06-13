@@ -33,7 +33,14 @@ function load() {
     return blank;
   }
   try {
-    return JSON.parse(readFileSync(DATA_FILE, "utf8"));
+    const parsed = JSON.parse(readFileSync(DATA_FILE, "utf8"));
+    // Migrate old schema ({ roleIds: [] }) to new schema ({ teams: [] })
+    if (!Array.isArray(parsed.teams)) {
+      const migrated = { teams: [] };
+      writeFileSync(DATA_FILE, JSON.stringify(migrated, null, 2), "utf8");
+      return migrated;
+    }
+    return parsed;
   } catch {
     const blank = { teams: [] };
     writeFileSync(DATA_FILE, JSON.stringify(blank, null, 2), "utf8");
