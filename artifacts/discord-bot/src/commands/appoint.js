@@ -1,8 +1,13 @@
 /**
  * /appoint command  (admin only)
- * Appoints a member as the OWNER of a team role.
- * Assigns the role to them and records them as the team owner in storage.
- * The owner can then use /sign to recruit players.
+ *
+ * Appoints a member as the owner of a selected team.
+ *   1. Shows a dropdown of all registered teams.
+ *   2. Assigns the "WFA | Manager" badge role to the appointed person.
+ *   3. Records them as the team's owner in persistent storage.
+ *
+ * The team's own specific role is NOT given here — that is reserved for
+ * players who are signed via /sign.
  */
 
 import {
@@ -14,6 +19,7 @@ import {
   ComponentType,
 } from "discord.js";
 import { getTeams, setTeamOwner } from "../storage/teamRoles.js";
+import { MANAGER_ROLE_ID } from "../config.js";
 
 export const data = new SlashCommandBuilder()
   .setName("appoint")
@@ -35,6 +41,15 @@ export async function execute(interaction) {
   const guild      = interaction.guild;
   const targetUser = interaction.options.getUser("member", true);
 
+  // Verify the WFA | Manager role exists in this server
+  const managerRole = await guild.roles.fetch(MANAGER_ROLE_ID).catch(() => null);
+  if (!managerRole) {
+    return interaction.reply({
+      content: `Could not find the **WFA | Manager** role (ID: \`${MANAGER_ROLE_ID}\`). Make sure it exists in this server.`,
+      flags: MessageFlags.Ephemeral,
+    });
+  }
+
   const teams = getTeams();
   if (teams.length === 0) {
     return interaction.reply({
@@ -43,7 +58,7 @@ export async function execute(interaction) {
     });
   }
 
-  // Resolve role names for the dropdown
+  // Resolve team role names for the dropdown
   const resolvedRoles = (
     await Promise.all(teams.map((t) => guild.roles.fetch(t.roleId).catch(() => null)))
   ).filter(Boolean);
@@ -57,17 +72,17 @@ export async function execute(interaction) {
 
   const selectMenu = new StringSelectMenuBuilder()
     .setCustomId("appoint_team_select")
-    .setPlaceholder("Select a team to appoint them to…")
+    .setPlaceholder("Select which team to appoint them to…")
     .addOptions(
       resolvedRoles.map((role) => ({
         label: role.name,
         value: role.id,
-        description: `Make ${targetUser.username} the owner of ${role.name}`,
+        description: `Appoint ${targetUser.username} as owner of ${role.name}`,
       }))
     );
 
   const response = await interaction.reply({
-    content: `Select which team to appoint **${targetUser.displayName ?? targetUser.username}** as owner of:`,
+    content: `Which team should **${targetUser.displayName ?? targetUser.username}** manage?`,
     components: [new ActionRowBuilder().addComponents(selectMenu)],
     flags: MessageFlags.Ephemeral,
   });
@@ -92,17 +107,19 @@ export async function execute(interaction) {
       });
     }
 
-    // Assign the role and record them as owner
-    await member.roles.add(selectedRole, `Appointed as team owner by ${interaction.user.tag}`);
+    // Give the WFA | Manager badge role (not the team's own role)
+    await member.roles.add(managerRole, `Appointed as manager of ${selectedRole.name} by ${interaction.user.tag}`);
+
+    // Record as team owner in storage
     setTeamOwner(selectedRole.id, targetUser.id);
 
     // Public announcement
     await interaction.channel?.send({
-      content: `**${member.displayName}** has been appointed as the owner of **${selectedRole.name}**!`,
+      content: `**${member.displayName}** has been appointed as the manager of **${selectedRole.name}**!`,
     });
 
     return selection.update({
-      content: `Done! **${member.displayName}** is now the owner of **${selectedRole.name}** and can use \`/sign\` to recruit players.`,
+      content: `Done! **${member.displayName}** is now the manager of **${selectedRole.name}** and can use \`/sign\` to recruit players.`,
       components: [],
     });
   } catch (err) {
@@ -111,7 +128,7 @@ export async function execute(interaction) {
     }
     console.error("[/appoint] Error:", err);
     return interaction.editReply({
-      content: "Failed to assign the role. Ensure the bot has **Manage Roles** and its role is above the target role.",
+      content: "Failed to assign the role. Ensure the bot has **Manage Roles** and its role is above **WFA | Manager** in the hierarchy.",
       components: [],
     });
   }
