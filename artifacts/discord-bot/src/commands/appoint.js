@@ -1,7 +1,8 @@
 /**
  * /appoint command  (admin only)
- * Lets an admin pick a member then choose a team role from a dropdown to assign.
- * Tracks the appointment in persistent storage and blocks double-signing.
+ * Appoints a member as the OWNER of a team role.
+ * Assigns the role to them and records them as the team owner in storage.
+ * The owner can then use /sign to recruit players.
  */
 
 import {
@@ -12,13 +13,13 @@ import {
   MessageFlags,
   ComponentType,
 } from "discord.js";
-import { getTeams, addMemberToTeam, getUserTeam } from "../storage/teamRoles.js";
+import { getTeams, setTeamOwner } from "../storage/teamRoles.js";
 
 export const data = new SlashCommandBuilder()
   .setName("appoint")
-  .setDescription("Appoint a member to a team role (admin only).")
+  .setDescription("Appoint a member as a team owner (admin only).")
   .addUserOption((o) =>
-    o.setName("member").setDescription("The member to appoint").setRequired(true)
+    o.setName("member").setDescription("The member to appoint as team owner").setRequired(true)
   )
   .setDefaultMemberPermissions(PermissionFlagsBits.Administrator);
 
@@ -34,16 +35,6 @@ export async function execute(interaction) {
   const guild      = interaction.guild;
   const targetUser = interaction.options.getUser("member", true);
 
-  // Block appointing someone already on a team
-  const existingTeam = getUserTeam(targetUser.id);
-  if (existingTeam) {
-    const existingRole = guild.roles.cache.get(existingTeam.roleId);
-    return interaction.reply({
-      content: `**${targetUser.username}** is already on a team${existingRole ? ` (${existingRole.name})` : ""}. Release them first.`,
-      flags: MessageFlags.Ephemeral,
-    });
-  }
-
   const teams = getTeams();
   if (teams.length === 0) {
     return interaction.reply({
@@ -52,31 +43,31 @@ export async function execute(interaction) {
     });
   }
 
-  // Resolve role objects and build dropdown options
+  // Resolve role names for the dropdown
   const resolvedRoles = (
     await Promise.all(teams.map((t) => guild.roles.fetch(t.roleId).catch(() => null)))
   ).filter(Boolean);
 
   if (resolvedRoles.length === 0) {
     return interaction.reply({
-      content: "No valid team roles found. Some roles may have been deleted.",
+      content: "No valid team roles found. Some may have been deleted.",
       flags: MessageFlags.Ephemeral,
     });
   }
 
   const selectMenu = new StringSelectMenuBuilder()
-    .setCustomId("appoint_role_select")
-    .setPlaceholder("Select a team role…")
+    .setCustomId("appoint_team_select")
+    .setPlaceholder("Select a team to appoint them to…")
     .addOptions(
       resolvedRoles.map((role) => ({
         label: role.name,
         value: role.id,
-        description: `Assign the ${role.name} role`,
+        description: `Make ${targetUser.username} the owner of ${role.name}`,
       }))
     );
 
   const response = await interaction.reply({
-    content: `Select a team role to assign to **${targetUser.displayName ?? targetUser.username}**:`,
+    content: `Select which team to appoint **${targetUser.displayName ?? targetUser.username}** as owner of:`,
     components: [new ActionRowBuilder().addComponents(selectMenu)],
     flags: MessageFlags.Ephemeral,
   });
@@ -101,15 +92,17 @@ export async function execute(interaction) {
       });
     }
 
-    await member.roles.add(selectedRole, `Appointed via /appoint by ${interaction.user.tag}`);
-    addMemberToTeam(selectedRole.id, targetUser.id);
+    // Assign the role and record them as owner
+    await member.roles.add(selectedRole, `Appointed as team owner by ${interaction.user.tag}`);
+    setTeamOwner(selectedRole.id, targetUser.id);
 
+    // Public announcement
     await interaction.channel?.send({
-      content: `**${member.displayName}** has been appointed to **${selectedRole.name}** by ${interaction.user}.`,
+      content: `**${member.displayName}** has been appointed as the owner of **${selectedRole.name}**!`,
     });
 
     return selection.update({
-      content: `Done! **${member.displayName}** is now on **${selectedRole.name}**.`,
+      content: `Done! **${member.displayName}** is now the owner of **${selectedRole.name}** and can use \`/sign\` to recruit players.`,
       components: [],
     });
   } catch (err) {

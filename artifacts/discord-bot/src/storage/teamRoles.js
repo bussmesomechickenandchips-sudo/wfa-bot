@@ -90,6 +90,19 @@ export function removeTeam(roleId) {
 }
 
 /**
+ * Set (or replace) the owner of a team.
+ * @returns {{ updated: boolean }}
+ */
+export function setTeamOwner(roleId, ownerId) {
+  const data = load();
+  const team = data.teams.find((t) => t.roleId === roleId);
+  if (!team) return { updated: false };
+  team.ownerId = ownerId;
+  save(data);
+  return { updated: true };
+}
+
+/**
  * Update the image URL on an existing team.
  * @returns {{ updated: boolean }}
  */

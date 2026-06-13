@@ -1,3 +1,76 @@
 {
-  "teams": []
+  "teams": [
+    {
+      "roleId": "1515065943913398542",
+      "ownerId": null,
+      "imageUrl": null,
+      "memberIds": []
+    },
+    {
+      "roleId": "1515066784074698913",
+      "ownerId": null,
+      "imageUrl": null,
+      "memberIds": []
+    },
+    {
+      "roleId": "1515065006780186795",
+      "ownerId": null,
+      "imageUrl": null,
+      "memberIds": []
+    },
+    {
+      "roleId": "1515064939541299240",
+      "ownerId": null,
+      "imageUrl": null,
+      "memberIds": []
+    },
+    {
+      "roleId": "1515066614834528347",
+      "ownerId": null,
+      "imageUrl": null,
+      "memberIds": []
+    },
+    {
+      "roleId": "1515066892472025110",
+      "ownerId": null,
+      "imageUrl": null,
+      "memberIds": []
+    },
+    {
+      "roleId": "1515065822299820062",
+      "ownerId": null,
+      "imageUrl": null,
+      "memberIds": []
+    },
+    {
+      "roleId": "1515065061918642388",
+      "ownerId": null,
+      "imageUrl": null,
+      "memberIds": []
+    },
+    {
+      "roleId": "1515066530184958035",
+      "ownerId": null,
+      "imageUrl": null,
+      "memberIds": []
+    },
+    {
+      "roleId": "1515066695687999540",
+      "ownerId": null,
+      "imageUrl": null,
+      "memberIds": []
+    },
+    {
+      "roleId": "1515066987057774702",
+      "ownerId": null,
+      "imageUrl": null,
+      "memberIds": []
+    },
+    {
+      "roleId": "1515066438346342431",
+      "ownerId": null,
+      "imageUrl": null,
+      "memberIds": []
+    }
+  ]
 }
