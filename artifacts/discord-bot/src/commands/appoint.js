@@ -1,75 +1,72 @@
 /**
- * /appoint command
- * Lets any user pick a member, then shows a dropdown of team roles.
- * Assigning the selected role to the chosen member.
+ * /appoint command  (admin only)
+ * Lets an admin pick a member then choose a team role from a dropdown to assign.
+ * Tracks the appointment in persistent storage and blocks double-signing.
  */
 
 import {
   SlashCommandBuilder,
+  PermissionFlagsBits,
   ActionRowBuilder,
   StringSelectMenuBuilder,
   MessageFlags,
   ComponentType,
 } from "discord.js";
-import { getTeamRoleIds } from "../storage/teamRoles.js";
+import { getTeams, addMemberToTeam, getUserTeam } from "../storage/teamRoles.js";
 
 export const data = new SlashCommandBuilder()
   .setName("appoint")
-  .setDescription("Appoint a member to a team role.")
-  .addUserOption((option) =>
-    option
-      .setName("member")
-      .setDescription("The member to appoint")
-      .setRequired(true)
-  );
+  .setDescription("Appoint a member to a team role (admin only).")
+  .addUserOption((o) =>
+    o.setName("member").setDescription("The member to appoint").setRequired(true)
+  )
+  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator);
 
-/**
- * @param {import("discord.js").ChatInputCommandInteraction} interaction
- */
+/** @param {import("discord.js").ChatInputCommandInteraction} interaction */
 export async function execute(interaction) {
-  const guild = interaction.guild;
-  if (!guild) {
+  if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
     return interaction.reply({
-      content: "This command can only be used inside a server.",
+      content: "You need the **Administrator** permission to use this command.",
       flags: MessageFlags.Ephemeral,
     });
   }
 
-  // Fetch the currently saved team role IDs
-  const teamRoleIds = getTeamRoleIds();
+  const guild      = interaction.guild;
+  const targetUser = interaction.options.getUser("member", true);
 
-  if (teamRoleIds.length === 0) {
+  // Block appointing someone already on a team
+  const existingTeam = getUserTeam(targetUser.id);
+  if (existingTeam) {
+    const existingRole = guild.roles.cache.get(existingTeam.roleId);
     return interaction.reply({
-      content:
-        "No team roles have been added yet. An administrator must first use `/add_team` to add roles.",
+      content: `**${targetUser.username}** is already on a team${existingRole ? ` (${existingRole.name})` : ""}. Release them first.`,
       flags: MessageFlags.Ephemeral,
     });
   }
 
-  // Resolve each saved role ID to an actual Guild Role object
-  // Filter out any IDs that no longer correspond to a real role
+  const teams = getTeams();
+  if (teams.length === 0) {
+    return interaction.reply({
+      content: "No teams have been added yet. Use `/add_team` first.",
+      flags: MessageFlags.Ephemeral,
+    });
+  }
+
+  // Resolve role objects and build dropdown options
   const resolvedRoles = (
-    await Promise.all(
-      teamRoleIds.map((id) =>
-        guild.roles.fetch(id).catch(() => null)
-      )
-    )
+    await Promise.all(teams.map((t) => guild.roles.fetch(t.roleId).catch(() => null)))
   ).filter(Boolean);
 
   if (resolvedRoles.length === 0) {
     return interaction.reply({
-      content:
-        "None of the saved team roles exist in this server anymore. Please re-add roles with `/add_team`.",
+      content: "No valid team roles found. Some roles may have been deleted.",
       flags: MessageFlags.Ephemeral,
     });
   }
 
-  const targetUser = interaction.options.getUser("member", true);
-
-  // Build the dropdown with one option per team role
   const selectMenu = new StringSelectMenuBuilder()
     .setCustomId("appoint_role_select")
-    .setPlaceholder("Select a team role to assign…")
+    .setPlaceholder("Select a team role…")
     .addOptions(
       resolvedRoles.map((role) => ({
         label: role.name,
@@ -78,16 +75,12 @@ export async function execute(interaction) {
       }))
     );
 
-  const row = new ActionRowBuilder().addComponents(selectMenu);
-
-  // Reply with the dropdown — ephemeral so only the invoker sees it
   const response = await interaction.reply({
     content: `Select a team role to assign to **${targetUser.displayName ?? targetUser.username}**:`,
-    components: [row],
+    components: [new ActionRowBuilder().addComponents(selectMenu)],
     flags: MessageFlags.Ephemeral,
   });
 
-  // Wait up to 60 seconds for the user to pick a role
   try {
     const selection = await response.awaitMessageComponent({
       componentType: ComponentType.StringSelect,
@@ -95,19 +88,12 @@ export async function execute(interaction) {
       time: 60_000,
     });
 
-    const selectedRoleId = selection.values[0];
-    const selectedRole = resolvedRoles.find((r) => r.id === selectedRoleId);
-
+    const selectedRole = resolvedRoles.find((r) => r.id === selection.values[0]);
     if (!selectedRole) {
-      return selection.update({
-        content: "Could not find the selected role. Please try again.",
-        components: [],
-      });
+      return selection.update({ content: "Could not find the selected role.", components: [] });
     }
 
-    // Fetch the GuildMember object for the target user
     const member = await guild.members.fetch(targetUser.id).catch(() => null);
-
     if (!member) {
       return selection.update({
         content: `Could not find **${targetUser.username}** in this server.`,
@@ -115,33 +101,24 @@ export async function execute(interaction) {
       });
     }
 
-    // Assign the role (bot needs Manage Roles permission and its own role must
-    // be higher in the hierarchy than the role it's assigning)
     await member.roles.add(selectedRole, `Appointed via /appoint by ${interaction.user.tag}`);
+    addMemberToTeam(selectedRole.id, targetUser.id);
 
-    // Send a public confirmation in the channel
     await interaction.channel?.send({
       content: `**${member.displayName}** has been appointed to **${selectedRole.name}** by ${interaction.user}.`,
     });
 
-    // Update the ephemeral reply to confirm
     return selection.update({
-      content: `Done! **${member.displayName}** has been given the **${selectedRole.name}** role.`,
+      content: `Done! **${member.displayName}** is now on **${selectedRole.name}**.`,
       components: [],
     });
   } catch (err) {
-    // awaitMessageComponent throws if the timeout is hit
     if (err.code === "InteractionCollectorError") {
-      return interaction.editReply({
-        content: "Role selection timed out. Please run `/appoint` again.",
-        components: [],
-      });
+      return interaction.editReply({ content: "Selection timed out. Run `/appoint` again.", components: [] });
     }
-
-    console.error("Error in /appoint role assignment:", err);
+    console.error("[/appoint] Error:", err);
     return interaction.editReply({
-      content:
-        "An error occurred while assigning the role. Make sure the bot has the **Manage Roles** permission and its role is above the target role in the hierarchy.",
+      content: "Failed to assign the role. Ensure the bot has **Manage Roles** and its role is above the target role.",
       components: [],
     });
   }

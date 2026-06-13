@@ -1,6 +1,6 @@
 /**
- * /remove_team command
- * Administrators only — removes a Discord role from the persistent team role list.
+ * /remove_team command  (admin only)
+ * Permanently removes a team from the list (does NOT strip the role from members).
  */
 
 import {
@@ -8,24 +8,18 @@ import {
   PermissionFlagsBits,
   MessageFlags,
 } from "discord.js";
-import { removeTeamRole } from "../storage/teamRoles.js";
+import { removeTeam } from "../storage/teamRoles.js";
 
 export const data = new SlashCommandBuilder()
   .setName("remove_team")
-  .setDescription("Remove a role from the team role list (admin only).")
-  .addRoleOption((option) =>
-    option
-      .setName("role")
-      .setDescription("The role to remove from the team list")
-      .setRequired(true)
+  .setDescription("Remove a team from the team list (admin only).")
+  .addRoleOption((o) =>
+    o.setName("role").setDescription("The team role to remove").setRequired(true)
   )
   .setDefaultMemberPermissions(PermissionFlagsBits.Administrator);
 
-/**
- * @param {import("discord.js").ChatInputCommandInteraction} interaction
- */
+/** @param {import("discord.js").ChatInputCommandInteraction} interaction */
 export async function execute(interaction) {
-  // Runtime permission guard
   if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
     return interaction.reply({
       content: "You need the **Administrator** permission to use this command.",
@@ -34,8 +28,7 @@ export async function execute(interaction) {
   }
 
   const role = interaction.options.getRole("role", true);
-
-  const { removed } = removeTeamRole(role.id);
+  const { removed } = removeTeam(role.id);
 
   if (!removed) {
     return interaction.reply({
@@ -45,7 +38,7 @@ export async function execute(interaction) {
   }
 
   return interaction.reply({
-    content: `Successfully removed ${role} from the team role list.`,
+    content: `Successfully removed **${role.name}** from the team list.`,
     flags: MessageFlags.Ephemeral,
   });
 }

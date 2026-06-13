@@ -1,6 +1,18 @@
 /**
- * Persistent storage for team roles using a JSON file.
- * Survives bot restarts — reads from disk on load, writes on every change.
+ * Persistent team storage backed by a JSON file.
+ * All reads and writes are synchronous to keep the API simple.
+ *
+ * Schema:
+ * {
+ *   "teams": [
+ *     {
+ *       "roleId":    "string",          // Discord role ID
+ *       "ownerId":   "string | null",   // User ID of the team owner
+ *       "imageUrl":  "string | null",   // Optional thumbnail shown in embeds
+ *       "memberIds": ["string"]         // User IDs of signed/appointed players
+ *     }
+ *   ]
+ * }
  */
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
@@ -8,76 +20,136 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-
-// Resolve the data directory relative to the package root (two levels up from src/storage)
-const DATA_DIR = join(__dirname, "../../data");
+const DATA_DIR  = join(__dirname, "../../data");
 const DATA_FILE = join(DATA_DIR, "team-roles.json");
 
-/**
- * Ensure the data directory and file exist, return parsed data.
- * @returns {{ roleIds: string[] }}
- */
-function loadData() {
-  if (!existsSync(DATA_DIR)) {
-    mkdirSync(DATA_DIR, { recursive: true });
-  }
+// ── I/O helpers ─────────────────────────────────────────────────────────────
+
+function load() {
+  if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
   if (!existsSync(DATA_FILE)) {
-    writeFileSync(DATA_FILE, JSON.stringify({ roleIds: [] }, null, 2), "utf8");
-    return { roleIds: [] };
+    const blank = { teams: [] };
+    writeFileSync(DATA_FILE, JSON.stringify(blank, null, 2), "utf8");
+    return blank;
   }
   try {
-    const raw = readFileSync(DATA_FILE, "utf8");
-    return JSON.parse(raw);
+    return JSON.parse(readFileSync(DATA_FILE, "utf8"));
   } catch {
-    // If the file is corrupted, reset it
-    writeFileSync(DATA_FILE, JSON.stringify({ roleIds: [] }, null, 2), "utf8");
-    return { roleIds: [] };
+    const blank = { teams: [] };
+    writeFileSync(DATA_FILE, JSON.stringify(blank, null, 2), "utf8");
+    return blank;
   }
 }
 
-/**
- * Persist current state to disk.
- * @param {{ roleIds: string[] }} data
- */
-function saveData(data) {
+function save(data) {
   writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), "utf8");
 }
 
-/**
- * Return all stored team role IDs.
- * @returns {string[]}
- */
-export function getTeamRoleIds() {
-  return loadData().roleIds;
+// ── Public API ───────────────────────────────────────────────────────────────
+
+/** Return every team. */
+export function getTeams() {
+  return load().teams;
+}
+
+/** Return a single team by role ID, or undefined. */
+export function getTeam(roleId) {
+  return load().teams.find((t) => t.roleId === roleId);
 }
 
 /**
- * Add a role ID to the team list. No-ops if already present.
- * @param {string} roleId
- * @returns {{ added: boolean }}
+ * Add a new team.
+ * @returns {{ added: boolean }} false if the role is already registered.
  */
-export function addTeamRole(roleId) {
-  const data = loadData();
-  if (data.roleIds.includes(roleId)) {
-    return { added: false };
-  }
-  data.roleIds.push(roleId);
-  saveData(data);
+export function addTeam(roleId, { ownerId = null, imageUrl = null } = {}) {
+  const data = load();
+  if (data.teams.some((t) => t.roleId === roleId)) return { added: false };
+  data.teams.push({ roleId, ownerId, imageUrl, memberIds: [] });
+  save(data);
   return { added: true };
 }
 
 /**
- * Remove a role ID from the team list.
- * @param {string} roleId
+ * Remove a team entirely.
  * @returns {{ removed: boolean }}
  */
-export function removeTeamRole(roleId) {
-  const data = loadData();
-  const index = data.roleIds.indexOf(roleId);
-  if (index === -1) {
-    return { removed: false };
-  }
-  data.roleIds.splice(index, 1);
-  saveData(data);
+export function removeTeam(roleId) {
+  const data = load();
+  const idx = data.teams.findIndex((t) => t.roleId === roleId);
+  if (idx === -1) return { removed: false };
+  data.teams.splice(idx, 1);
+  save(data);
   return { removed: true };
+}
+
+/**
+ * Update the image URL on an existing team.
+ * @returns {{ updated: boolean }}
+ */
+export function setTeamImage(roleId, imageUrl) {
+  const data = load();
+  const team = data.teams.find((t) => t.roleId === roleId);
+  if (!team) return { updated: false };
+  team.imageUrl = imageUrl;
+  save(data);
+  return { updated: true };
+}
+
+/**
+ * Add a player to a team's member list.
+ * @returns {{ added: boolean }}
+ */
+export function addMemberToTeam(roleId, userId) {
+  const data = load();
+  const team = data.teams.find((t) => t.roleId === roleId);
+  if (!team) return { added: false };
+  if (team.memberIds.includes(userId)) return { added: false };
+  team.memberIds.push(userId);
+  save(data);
+  return { added: true };
+}
+
+/**
+ * Remove a player from a team's member list.
+ * @returns {{ removed: boolean }}
+ */
+export function removeMemberFromTeam(roleId, userId) {
+  const data = load();
+  const team = data.teams.find((t) => t.roleId === roleId);
+  if (!team) return { removed: false };
+  const idx = team.memberIds.indexOf(userId);
+  if (idx === -1) return { removed: false };
+  team.memberIds.splice(idx, 1);
+  save(data);
+  return { removed: true };
+}
+
+/**
+ * Remove ALL members from a team without deleting the team itself.
+ * Returns the list of member IDs that were cleared.
+ */
+export function disbandTeamMembers(roleId) {
+  const data = load();
+  const team = data.teams.find((t) => t.roleId === roleId);
+  if (!team) return { cleared: false, memberIds: [] };
+  const memberIds = [...team.memberIds];
+  team.memberIds = [];
+  save(data);
+  return { cleared: true, memberIds };
+}
+
+/**
+ * Find which team (if any) a user is currently a member of.
+ * @returns {object|null}
+ */
+export function getUserTeam(userId) {
+  return load().teams.find((t) => t.memberIds.includes(userId)) ?? null;
+}
+
+/**
+ * Find the team owned by a given user.
+ * @returns {object|null}
+ */
+export function getTeamByOwner(userId) {
+  return load().teams.find((t) => t.ownerId === userId) ?? null;
 }
