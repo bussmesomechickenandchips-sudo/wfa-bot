@@ -145,17 +145,19 @@ export function removeMemberFromTeam(roleId, userId) {
 }
 
 /**
- * Remove ALL members from a team without deleting the team itself.
- * Returns the list of member IDs that were cleared.
+ * Remove ALL members and the owner from a team without deleting the team itself.
+ * Returns the member IDs and owner ID that were cleared.
  */
 export function disbandTeamMembers(roleId) {
   const data = load();
   const team = data.teams.find((t) => t.roleId === roleId);
-  if (!team) return { cleared: false, memberIds: [] };
+  if (!team) return { cleared: false, memberIds: [], ownerId: null };
   const memberIds = [...team.memberIds];
+  const ownerId = team.ownerId;
   team.memberIds = [];
+  team.ownerId = null;
   save(data);
-  return { cleared: true, memberIds };
+  return { cleared: true, memberIds, ownerId };
 }
 
 /**
