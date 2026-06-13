@@ -13,10 +13,10 @@ export async function execute(interaction) {
         .setTitle("Pong! 🏓")
         .setDescription("Calculating latency…"),
     ],
-    fetchReply: true,
+    withResponse: true,
   });
 
-  const ms = sent.createdTimestamp - interaction.createdTimestamp;
+  const ms = sent.resource.message.createdTimestamp - interaction.createdTimestamp;
 
   await interaction.editReply({
     embeds: [

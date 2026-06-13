@@ -2,7 +2,7 @@
  * "ready" event handler — fired once when the bot successfully logs in.
  */
 
-export const name = "ready";
+export const name = "clientReady";
 export const once = true;
 
 /**
