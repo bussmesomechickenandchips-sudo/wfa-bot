@@ -82,6 +82,25 @@ export async function execute(interaction) {
     });
   }
 
+  // Check roster limit (owner doesn't count toward the limit)
+  if (team.rosterLimit != null) {
+    const currentPlayers = team.memberIds.filter((id) => id !== team.ownerId);
+    if (currentPlayers.length >= team.rosterLimit) {
+      return interaction.reply({
+        embeds: [
+          new EmbedBuilder()
+            .setColor(0xed4245)
+            .setTitle("Roster Full")
+            .setDescription(
+              `**${teamRole.name}** has reached its roster limit of **${team.rosterLimit}** player(s).\n\n` +
+              `A player must be released before you can sign anyone new.`
+            ),
+        ],
+        flags: MessageFlags.Ephemeral,
+      });
+    }
+  }
+
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   const acceptBtn = new ButtonBuilder()

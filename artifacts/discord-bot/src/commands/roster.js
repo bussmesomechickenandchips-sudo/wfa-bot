@@ -25,67 +25,65 @@ export async function execute(interaction) {
 
   const guild = interaction.guild;
 
-  // Build one embed per team (Discord allows up to 10 per message)
-  const embeds = [];
+  // Resolve all team roles concurrently
+  const resolved = await Promise.all(
+    teams.map(async (team) => {
+      const role = await guild.roles.fetch(team.roleId).catch(() => null);
+      return { team, role };
+    })
+  );
 
-  for (const team of teams) {
-    const role  = await guild.roles.fetch(team.roleId).catch(() => null);
-    const name  = role ? role.name : `Unknown Team (${team.roleId})`;
-    const color = role?.color || 0x5865f2;
-    const owner = team.ownerId ? `<@${team.ownerId}>` : "_No owner set_";
+  // Build description lines like the list_team style
+  const lines = [];
+  for (const { team, role } of resolved) {
+    const name    = role ? `**${role.name}**` : `**Unknown Team** (${team.roleId})`;
+    const owner   = team.ownerId ? `<@${team.ownerId}>` : "None";
+    const players = team.memberIds.filter((id) => id !== team.ownerId);
+    const limitText = team.rosterLimit != null ? `/${team.rosterLimit}` : "";
+    const memberCount = `${players.length}${limitText}`;
 
-    const playerIds = team.memberIds.filter((id) => id !== team.ownerId);
-    const players   = playerIds.length > 0
-      ? playerIds.map((id) => `<@${id}>`).join("\n")
+    const playerList = players.length > 0
+      ? players.map((id) => `<@${id}>`).join(", ")
       : "_No players yet_";
 
-    const embed = new EmbedBuilder()
-      .setColor(color)
-      .setTitle(name)
-      .addFields(
-        { name: "Owner", value: owner, inline: false },
-        { name: "Players", value: players, inline: false }
-      );
-
-    if (team.imageUrl) embed.setThumbnail(team.imageUrl);
-
-    embeds.push(embed);
-
-    // Discord caps at 10 embeds per message — flush early if needed
-    if (embeds.length === 10) break;
+    lines.push(
+      `${name}\n` +
+      `Owner: ${owner}\n` +
+      `Members: ${memberCount}\n` +
+      `Players: ${playerList}`
+    );
   }
 
-  await interaction.editReply({ embeds });
+  // Split into multiple embeds if description would exceed 4096 chars
+  const embeds = [];
+  let current = "";
 
-  // If there are more than 10 teams, send the rest as follow-ups
-  if (teams.length > 10) {
-    const remaining = teams.slice(10);
-    const extra = [];
-    for (const team of remaining) {
-      const role  = await guild.roles.fetch(team.roleId).catch(() => null);
-      const name  = role ? role.name : `Unknown Team (${team.roleId})`;
-      const color = role?.color || 0x5865f2;
-      const owner = team.ownerId ? `<@${team.ownerId}>` : "_No owner set_";
-      const playerIds = team.memberIds.filter((id) => id !== team.ownerId);
-      const players   = playerIds.length > 0
-        ? playerIds.map((id) => `<@${id}>`).join("\n")
-        : "_No players yet_";
-
-      const embed = new EmbedBuilder()
-        .setColor(color)
-        .setTitle(name)
-        .addFields(
-          { name: "Owner", value: owner, inline: false },
-          { name: "Players", value: players, inline: false }
-        );
-
-      if (team.imageUrl) embed.setThumbnail(team.imageUrl);
-      extra.push(embed);
-
-      if (extra.length === 10) {
-        await interaction.followUp({ embeds: extra.splice(0) });
-      }
+  for (const line of lines) {
+    if (current.length + line.length + 2 > 4000) {
+      embeds.push(
+        new EmbedBuilder()
+          .setColor(0x5865f2)
+          .setTitle(embeds.length === 0 ? "📋 Roster" : "📋 Roster (cont.)")
+          .setDescription(current.trimEnd())
+          .setTimestamp(embeds.length === 0 ? new Date() : undefined)
+      );
+      current = line + "\n\n";
+    } else {
+      current += line + "\n\n";
     }
-    if (extra.length > 0) await interaction.followUp({ embeds: extra });
+  }
+  if (current.trim()) {
+    embeds.push(
+      new EmbedBuilder()
+        .setColor(0x5865f2)
+        .setTitle(embeds.length === 0 ? "📋 Roster" : "📋 Roster (cont.)")
+        .setDescription(current.trimEnd())
+        .setTimestamp(embeds.length === 0 ? new Date() : undefined)
+    );
+  }
+
+  await interaction.editReply({ embeds: [embeds[0]] });
+  for (let i = 1; i < embeds.length; i++) {
+    await interaction.followUp({ embeds: [embeds[i]] });
   }
 }
