@@ -7,6 +7,4 @@ RUN npm install
 
 COPY . .
 
-RUN node src/deploy-commands.js
-
-CMD ["node", "src/index.js"]
+CMD node src/deploy-commands.js && node src/index.js
